@@ -1,7 +1,9 @@
-import { encodeFunctionData, encodeAbiParameters, type Address, type Hex } from 'viem'
+import { encodeFunctionData, encodeAbiParameters, type Address, type Hex, zeroAddress } from 'viem'
+import { readContract, simulateContract } from '@wagmi/vue/actions'
 import { type SwapApiQuote, type SwapApiVerify, SwapVerificationType } from '~/entities/swap'
 import { swapVerifierAbi } from '~/entities/euler/abis'
 import { INTEREST_ADJUSTMENT_BPS, BPS_BASE } from '~/entities/tuning-constants'
+import { vaultPreviewDepositAbi } from '~/abis/vault'
 
 const HANDLER_GENERIC: Hex = '0x47656e6572696300000000000000000000000000000000000000000000000000'
 
@@ -91,6 +93,58 @@ export interface AdapterSwapQuoteContext extends EnsoSwapQuoteContext {
   adapterAddress: Address
   adapterCalldata: Hex
   minAmountOut: bigint
+}
+
+export interface BptAdapterConfigEntry {
+  adapter: string
+  tokenIndex: number
+  pool: string
+  wrapper: string
+  numTokens: number
+}
+
+const BALANCER_ROUTER = '0x9dA18982a33FD0c7051B19F0d7C76F2d5E7e017c' as Address
+
+const queryAddLiquidityAbi = [{
+  type: 'function' as const,
+  name: 'queryAddLiquidityUnbalanced',
+  inputs: [
+    { name: 'pool', type: 'address' },
+    { name: 'exactAmountsIn', type: 'uint256[]' },
+    { name: 'sender', type: 'address' },
+    { name: 'userData', type: 'bytes' },
+  ],
+  outputs: [{ name: 'bptAmountOut', type: 'uint256' }],
+  stateMutability: 'nonpayable' as const,
+}]
+
+export async function previewAdapterZapIn(
+  config: Parameters<typeof readContract>[0],
+  entry: BptAdapterConfigEntry,
+  inputAmount: bigint,
+  slippagePercent: number,
+): Promise<{ expectedBptOut: bigint, minBptOut: bigint }> {
+  const wrappedAmount = await readContract(config, {
+    address: entry.wrapper as Address,
+    abi: vaultPreviewDepositAbi,
+    functionName: 'previewDeposit',
+    args: [inputAmount],
+  })
+
+  const amountsIn = new Array(entry.numTokens).fill(0n) as bigint[]
+  amountsIn[entry.tokenIndex] = wrappedAmount
+
+  const { result: expectedBptOut } = await simulateContract(config, {
+    address: BALANCER_ROUTER,
+    abi: queryAddLiquidityAbi,
+    functionName: 'queryAddLiquidityUnbalanced',
+    args: [entry.pool as Address, amountsIn, zeroAddress, '0x'],
+  })
+
+  const slippageBps = Math.round(slippagePercent * 100)
+  const minBptOut = expectedBptOut * BigInt(10000 - slippageBps) / 10000n
+
+  return { expectedBptOut, minBptOut }
 }
 
 const zapInFunctionAbi = [{

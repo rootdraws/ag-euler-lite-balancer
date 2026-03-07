@@ -36,21 +36,28 @@ const allMenuItems: MenuItem[] = [
     icon: 'borrow-outline',
     activeIcon: 'borrow-filled',
   },
+  {
+    name: 'loop-zap',
+    label: 'Loop Zap',
+    icon: 'borrow-outline',
+    activeIcon: 'borrow-filled',
+  },
 ]
 
-export const getMenuItems = (enableEarnPage: boolean, enableLendPage: boolean, enableExplorePage: boolean) => {
+export const getMenuItems = (enableEarnPage: boolean, enableLendPage: boolean, enableExplorePage: boolean, enableLoopZapPage: boolean = false) => {
   return allMenuItems.filter((item) => {
     if (item.name === 'explore' && !enableExplorePage) return false
     if (item.name === 'lend' && !enableLendPage) return false
     if (item.name === 'earn' && !enableEarnPage) return false
+    if (item.name === 'loop-zap' && !enableLoopZapPage) return false
     return true
   })
 }
 
-const preferredDefaultOrder = ['explore', 'earn', 'lend', 'borrow', 'portfolio'] as const
+const preferredDefaultOrder = ['explore', 'earn', 'lend', 'borrow', 'loop-zap', 'portfolio'] as const
 
-export const getDefaultPageRoute = (enableEarnPage: boolean, enableLendPage: boolean, enableExplorePage: boolean) => {
-  const items = getMenuItems(enableEarnPage, enableLendPage, enableExplorePage)
+export const getDefaultPageRoute = (enableEarnPage: boolean, enableLendPage: boolean, enableExplorePage: boolean, enableLoopZapPage: boolean = false) => {
+  const items = getMenuItems(enableEarnPage, enableLendPage, enableExplorePage, enableLoopZapPage)
   return preferredDefaultOrder.find(name =>
     items.some(item => item.name === name),
   ) ?? 'portfolio'

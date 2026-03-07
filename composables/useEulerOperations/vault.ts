@@ -5,7 +5,7 @@ import { erc20ApproveAbi, erc20TransferAbi } from '~/abis/erc20'
 import { evcEnableCollateralAbi, evcEnableControllerAbi } from '~/abis/evc'
 import { vaultBorrowAbi, vaultDepositAbi, vaultPreviewWithdrawAbi, vaultRedeemAbi, vaultWithdrawAbi } from '~/abis/vault'
 import { SaHooksBuilder } from '~/entities/saHooksSDK'
-import { swapperAbi, swapVerifierAbi } from '~/entities/euler/abis'
+import { swapperAbi, swapVerifierAbi, transferFromSenderAbi } from '~/entities/euler/abis'
 import { convertSaHooksToEVCCalls, type EVCCall } from '~/utils/evc-converter'
 import { getNewSubAccount } from '~/entities/account'
 import { buildCollateralCleanupCalls } from '~/utils/collateral-cleanup'
@@ -675,6 +675,171 @@ export const createVaultBuilders = (
     return { kind: 'multiply', steps }
   }
 
+  const buildLoopZapPlan = async ({
+    inputTokenAddress,
+    inputAmount,
+    collateralVaultAddress,
+    borrowVaultAddress,
+    debtAmount,
+    zapQuote,
+    multiplyQuote,
+    subAccount,
+    enabledCollaterals,
+    includePermit2Call = true,
+  }: {
+    inputTokenAddress: string
+    inputAmount: bigint
+    collateralVaultAddress: string
+    borrowVaultAddress: string
+    debtAmount: bigint
+    zapQuote: SwapApiQuote
+    multiplyQuote: SwapApiQuote
+    subAccount?: string
+    enabledCollaterals?: string[]
+    includePermit2Call?: boolean
+  }): Promise<TxPlan> => {
+    if (!ctx.address.value || !ctx.eulerCoreAddresses.value || !ctx.eulerPeripheryAddresses.value) {
+      throw new Error('Wallet not connected or addresses not available')
+    }
+
+    const inputTokenAddr = inputTokenAddress as Address
+    const collateralVaultAddr = collateralVaultAddress as Address
+    const borrowVaultAddr = borrowVaultAddress as Address
+    const userAddr = ctx.address.value as Address
+    const evcAddress = ctx.eulerCoreAddresses.value.evc as Address
+    const swapVerifierAddress = ctx.eulerPeripheryAddresses.value.swapVerifier as Address
+
+    assertSwapperVerifierAllowed(zapQuote.verify.verifierAddress, ctx.eulerPeripheryAddresses.value.swapVerifier)
+    assertSwapperVerifierAllowed(multiplyQuote.verify.verifierAddress, ctx.eulerPeripheryAddresses.value.swapVerifier)
+
+    const subAccountAddr = (subAccount || await getNewSubAccount(ctx.address.value)) as Address
+
+    const { steps, permitCall, usesPermit2 } = await helpers.prepareTokenApproval({
+      assetAddr: inputTokenAddr,
+      spenderAddr: swapVerifierAddress,
+      userAddr,
+      amount: inputAmount,
+      includePermit2Call,
+    })
+
+    const tos = await helpers.prepareTos(userAddr)
+
+    const hooks = new SaHooksBuilder()
+    hooks.addContractInterface(swapVerifierAddress, [...transferFromSenderAbi, ...swapVerifierAbi])
+    hooks.addContractInterface(zapQuote.swap.swapperAddress, swapperAbi)
+    hooks.addContractInterface(evcAddress, [...evcEnableControllerAbi, ...evcEnableCollateralAbi])
+    hooks.addContractInterface(borrowVaultAddr, vaultBorrowAbi)
+    tos.addTosInterface(hooks)
+
+    const evcCalls: EVCCall[] = []
+
+    if (permitCall) {
+      evcCalls.push(permitCall)
+    }
+
+    tos.injectTosCall(evcCalls, hooks)
+
+    // 1. Enable collateral
+    evcCalls.push({
+      targetContract: evcAddress,
+      onBehalfOfAccount: '0x0000000000000000000000000000000000000000' as Address,
+      value: 0n,
+      data: hooks.getDataForCall(evcAddress, 'enableCollateral', [subAccountAddr, collateralVaultAddr]) as Hash,
+    })
+
+    // 2. Enable controller (borrow vault)
+    evcCalls.push({
+      targetContract: evcAddress,
+      onBehalfOfAccount: '0x0000000000000000000000000000000000000000' as Address,
+      value: 0n,
+      data: hooks.getDataForCall(evcAddress, 'enableController', [subAccountAddr, borrowVaultAddr]) as Hash,
+    })
+
+    // 3. transferFromSender: pull input tokens from wallet to Swapper
+    evcCalls.push({
+      targetContract: swapVerifierAddress,
+      onBehalfOfAccount: userAddr,
+      value: 0n,
+      data: hooks.getDataForCall(swapVerifierAddress, 'transferFromSender', [inputTokenAddr, inputAmount, zapQuote.swap.swapperAddress]) as Hash,
+    })
+
+    // 4. Swapper multicall: convert input → BPT → deposit into collateral vault
+    evcCalls.push({
+      targetContract: zapQuote.swap.swapperAddress,
+      onBehalfOfAccount: userAddr,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: swapperAbi,
+        functionName: 'multicall',
+        args: [zapQuote.swap.multicallItems.map(item => item.data)],
+      }),
+    })
+
+    // 5. Verify zap output
+    evcCalls.push({
+      targetContract: zapQuote.verify.verifierAddress,
+      onBehalfOfAccount: zapQuote.verify.account,
+      value: 0n,
+      data: zapQuote.verify.verifierData as Hash,
+    })
+
+    // 6. Borrow to Swapper
+    evcCalls.push({
+      targetContract: borrowVaultAddr,
+      onBehalfOfAccount: subAccountAddr,
+      value: 0n,
+      data: hooks.getDataForCall(borrowVaultAddr, 'borrow', [debtAmount, multiplyQuote.swap.swapperAddress]) as Hash,
+    })
+
+    // 7. Swapper multicall: convert borrowed → BPT → deposit into collateral vault
+    evcCalls.push({
+      targetContract: multiplyQuote.swap.swapperAddress,
+      onBehalfOfAccount: subAccountAddr,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: swapperAbi,
+        functionName: 'multicall',
+        args: [multiplyQuote.swap.multicallItems.map(item => item.data)],
+      }),
+    })
+
+    // 8. Verify multiply output
+    evcCalls.push({
+      targetContract: multiplyQuote.verify.verifierAddress,
+      onBehalfOfAccount: multiplyQuote.verify.account,
+      value: 0n,
+      data: multiplyQuote.verify.verifierData as Hash,
+    })
+
+    // Collateral cleanup
+    const cleanupCalls = await buildCollateralCleanupCalls({
+      evcAddress,
+      accountLensAddress: ctx.eulerLensAddresses.value!.accountLens as Address,
+      subAccount: subAccountAddr,
+      providerUrl: ctx.EVM_PROVIDER_URL,
+      subgraphUrl: ctx.SUBGRAPH_URL,
+    })
+    if (cleanupCalls.length) {
+      evcCalls.splice(2, 0, ...cleanupCalls)
+    }
+
+    // Pyth oracle price updates
+    await helpers.injectPythHealthCheckUpdates({
+      evcCalls,
+      liabilityVaultAddr: borrowVaultAddr,
+      enabledCollaterals,
+      additionalCollaterals: [collateralVaultAddr],
+      userAddr,
+    })
+
+    steps.push(helpers.buildEvcBatchStep({
+      evcCalls,
+      label: usesPermit2 ? 'Permit2 Loop Zap via EVC' : 'Loop Zap via EVC',
+    }))
+
+    return { kind: 'loop-zap', steps }
+  }
+
   return {
     buildSupplyPlan,
     buildWithdrawPlan,
@@ -682,5 +847,6 @@ export const createVaultBuilders = (
     buildBorrowPlan,
     buildBorrowBySavingPlan,
     buildMultiplyPlan,
+    buildLoopZapPlan,
   }
 }

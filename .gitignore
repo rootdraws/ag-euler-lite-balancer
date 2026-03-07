@@ -25,3 +25,4 @@ logs
 
 *storybook.log
 .vercel
+.env*.local

@@ -1,6 +1,9 @@
 export interface BptAdapterEntry {
   adapter: string
   tokenIndex: number
+  pool?: string
+  wrapper?: string
+  numTokens?: number
 }
 
 function parseBptAdapterConfig(raw: unknown): Record<string, BptAdapterEntry> {
@@ -59,8 +62,9 @@ export const useDeployConfig = () => {
     enableExplorePage: isEnabled(rc.configEnableExplorePage),
     enableSwapDeposit: isExplicitlyEnabled(rc.configEnableSwapDeposit),
     enableEnsoMultiply: isExplicitlyEnabled(rc.configEnableEnsoMultiply),
+    enableLoopZapPage: isExplicitlyEnabled(rc.configEnableLoopZapPage),
 
-    // BPT adapter config: JSON map of collateral vault address → { adapter, tokenIndex }
+    // BPT adapter config: JSON map of collateral vault address → { adapter, tokenIndex, pool, wrapper, numTokens }
     // Example: {"0x175831aF...":{"adapter":"0xABC...","tokenIndex":1}}
     bptAdapterConfig: parseBptAdapterConfig(rc.configBptAdapterConfig),
 

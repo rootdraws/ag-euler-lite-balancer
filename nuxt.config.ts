@@ -113,6 +113,7 @@ export default defineNuxtConfig({
       // Feature flags: disabled by default. Set to 'true' to enable.
       configEnableSwapDeposit: '',
       configEnableEnsoMultiply: '',
+      configEnableLoopZapPage: '',
       configBptAdapterConfig: '',
       // Env config fallbacks (Doppler: NUXT_PUBLIC_*)
       // Prefer window.__APP_CONFIG__ at runtime; these are build-time fallbacks.

@@ -1,5 +1,5 @@
 import type { Ref, ComputedRef } from 'vue'
-import { useAccount } from '@wagmi/vue'
+import { useAccount, useConfig } from '@wagmi/vue'
 import { formatUnits, type Address } from 'viem'
 import { logWarn } from '~/utils/errorHandling'
 import { normalizeAddressOrEmpty } from '~/utils/accountPositionHelpers'
@@ -28,7 +28,7 @@ import { getUtilisationWarning, getBorrowCapWarning } from '~/composables/useVau
 import { useMultiplyCollateralOptions } from '~/composables/useMultiplyCollateralOptions'
 import { useSwapQuotesParallel } from '~/composables/useSwapQuotesParallel'
 import { useEulerProductOfVault } from '~/composables/useEulerLabels'
-import { useEnsoRoute, encodeAdapterZapIn } from '~/composables/useEnsoRoute'
+import { useEnsoRoute, encodeAdapterZapIn, previewAdapterZapIn, type BptAdapterConfigEntry } from '~/composables/useEnsoRoute'
 
 type MultiplyPlanParams = {
   supplyVaultAddress: string
@@ -96,6 +96,7 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
   const modal = useModal()
   const { error } = useToast()
   const { buildMultiplyPlan, executeTxPlan } = useEulerOperations()
+  const wagmiConfig = useConfig()
   const { address, isConnected } = useAccount()
   const { refreshAllPositions, depositPositions } = useEulerAccount()
   const { eulerLensAddresses, eulerPeripheryAddresses, chainId: currentChainId } = useEulerAddresses()
@@ -580,12 +581,19 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
       const adapterEntry = bptAdapterConfig[collateralVaultAddr.toLowerCase()]
         || bptAdapterConfig[collateralVaultAddr]
 
-      if (adapterEntry) {
+      if (adapterEntry && adapterEntry.pool && adapterEntry.wrapper && adapterEntry.numTokens) {
         await requestMultiplyCustomQuote('balancer-adapter', async () => {
           const deadline = Math.floor(Date.now() / 1000) + 1800
-          const adapterCalldata = encodeAdapterZapIn(adapterEntry.tokenIndex, debtAmount, 0n)
+          const fullEntry = adapterEntry as BptAdapterConfigEntry
+          const { expectedBptOut, minBptOut } = await previewAdapterZapIn(
+            wagmiConfig,
+            fullEntry,
+            debtAmount,
+            multiplySlippage.value,
+          )
+          const adapterCalldata = encodeAdapterZapIn(fullEntry.tokenIndex, debtAmount, minBptOut)
 
-          return buildAdapterSwapQuote({
+          const quote = buildAdapterSwapQuote({
             swapperAddress: swapperAddr,
             swapVerifierAddress: swapVerifierAddr,
             collateralVault: collateralVaultAddr,
@@ -595,10 +603,14 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
             tokenOut,
             borrowAmount: debtAmount,
             deadline,
-            adapterAddress: adapterEntry.adapter as Address,
+            adapterAddress: fullEntry.adapter as Address,
             adapterCalldata,
-            minAmountOut: 0n,
+            minAmountOut: minBptOut,
           })
+
+          quote.amountOut = expectedBptOut.toString()
+          quote.amountOutMin = minBptOut.toString()
+          return quote
         }, { logContext })
       }
       else {

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { type MenuItem, getMenuItems } from '~/entities/menu'
 
-const { enableEarnPage, enableLendPage, enableExplorePage } = useDeployConfig()
-const menuItems = getMenuItems(enableEarnPage, enableLendPage, enableExplorePage)
+const { enableEarnPage, enableLendPage, enableExplorePage, enableLoopZapPage } = useDeployConfig()
+const menuItems = getMenuItems(enableEarnPage, enableLendPage, enableExplorePage, enableLoopZapPage)
 
 const route = useRoute()
 

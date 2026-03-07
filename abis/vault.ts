@@ -134,6 +134,16 @@ export const vaultRepayWithSharesAbi = [
   },
 ] as const
 
+export const vaultPreviewDepositAbi = [
+  {
+    type: 'function',
+    name: 'previewDeposit',
+    inputs: [{ name: 'assets', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+] as const
+
 export const vaultTransferFromMaxAbi = [
   {
     type: 'function',
