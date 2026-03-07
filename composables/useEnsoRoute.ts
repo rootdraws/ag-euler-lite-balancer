@@ -184,7 +184,7 @@ export const useEnsoRoute = () => {
       tokenOut: params.tokenOut,
       amountIn: params.amountIn.toString(),
       receiver: params.receiver,
-      slippage: String(params.slippage),
+      slippage: String(Math.round(params.slippage * 100)),
       routingStrategy: 'router',
     })
 

@@ -16,6 +16,8 @@ const {
   debtAmount,
   walletBalance,
   expectedBptTotal,
+  availableLiquidity,
+  isInsufficientLiquidity,
   borrowAmountFormatted,
   totalExposureFormatted,
   isQuoting,
@@ -44,6 +46,11 @@ const isInsufficient = computed(() => {
   return inputAmountNano.value > 0n && inputAmountNano.value > walletBalance.value
 })
 
+const availableLiquidityFormatted = computed(() => {
+  if (availableLiquidity.value <= 0n) return '0'
+  return formatUnits(availableLiquidity.value, selectedPool.value?.borrowAssetDecimals ?? 18)
+})
+
 const setMax = () => {
   const token = selectedInputToken.value
   if (!token || walletBalance.value <= 0n) return
@@ -53,6 +60,7 @@ const setMax = () => {
 const buttonLabel = computed(() => {
   if (!isConnected.value) return 'Connect Wallet'
   if (isInsufficient.value) return 'Insufficient Balance'
+  if (isInsufficientLiquidity.value) return 'Insufficient Vault Liquidity'
   if (isQuoting.value) return 'Getting Quote...'
   if (isPreparing.value) return 'Preparing...'
   if (isSubmitting.value) return 'Submitting...'
@@ -63,7 +71,7 @@ const buttonLabel = computed(() => {
 
 const isButtonDisabled = computed(() => {
   if (!isConnected.value) return false
-  return !isReady.value || isPreparing.value || isSubmitting.value || isQuoting.value || isInsufficient.value
+  return !isReady.value || isPreparing.value || isSubmitting.value || isQuoting.value || isInsufficient.value || isInsufficientLiquidity.value
 })
 
 const handleSubmit = () => {
@@ -183,6 +191,19 @@ const handleSubmit = () => {
           <div class="flex justify-between text-body-sm">
             <span class="text-content-tertiary">Borrow Amount</span>
             <span class="text-content-primary font-medium">{{ borrowAmountFormatted }} {{ selectedPool.borrowAssetSymbol }}</span>
+          </div>
+          <div class="flex justify-between text-body-sm">
+            <span class="text-content-tertiary">Available Liquidity</span>
+            <span
+              class="font-medium"
+              :class="isInsufficientLiquidity ? 'text-red-400' : 'text-content-primary'"
+            >{{ availableLiquidityFormatted }} {{ selectedPool.borrowAssetSymbol }}</span>
+          </div>
+          <div
+            v-if="isInsufficientLiquidity"
+            class="p-10 rounded-8 bg-red-500/10 text-red-400 text-body-xs"
+          >
+            Borrow amount exceeds available vault liquidity. Reduce your deposit or leverage.
           </div>
           <div class="flex justify-between text-body-sm">
             <span class="text-content-tertiary">Total Exposure</span>

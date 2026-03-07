@@ -10,6 +10,7 @@ import {
   previewAdapterZapIn,
   type BptAdapterConfigEntry,
 } from '~/composables/useEnsoRoute'
+import { useVaultRegistry } from '~/composables/useVaultRegistry'
 import { logWarn } from '~/utils/errorHandling'
 import { getTxErrorMessage } from '~/utils/tx-errors'
 
@@ -34,9 +35,9 @@ const POOLS: LoopZapPool[] = [
     borrowVault: '0x438cedcE647491B1d93a73d491eC19A50194c222',
     borrowAsset: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a',
     borrowAssetSymbol: 'AUSD',
-    borrowAssetDecimals: 18,
+    borrowAssetDecimals: 6,
     inputTokens: [
-      { address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a', symbol: 'AUSD', decimals: 18 },
+      { address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a', symbol: 'AUSD', decimals: 6 },
     ],
     routeType: 'adapter',
     bptAddress: '0x2DAA146dfB7EAef0038F9F15B2EC1e4DE003f72b',
@@ -76,9 +77,9 @@ const POOLS: LoopZapPool[] = [
     borrowVault: '0x438cedcE647491B1d93a73d491eC19A50194c222',
     borrowAsset: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a',
     borrowAssetSymbol: 'AUSD',
-    borrowAssetDecimals: 18,
+    borrowAssetDecimals: 6,
     inputTokens: [
-      { address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a', symbol: 'AUSD', decimals: 18 },
+      { address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a', symbol: 'AUSD', decimals: 6 },
     ],
     routeType: 'adapter',
     bptAddress: '0xD328E74AdD15Ac98275737a7C1C884ddc951f4D3',
@@ -98,6 +99,7 @@ export const useLoopZap = () => {
   const { slippage } = useSlippage()
   const { bptAdapterConfig } = useDeployConfig()
   const { getEnsoRoute, buildEnsoSwapQuote, buildAdapterSwapQuote } = useEnsoRoute()
+  const { getVault } = useVaultRegistry()
   const modal = useModal()
   const { error: showError } = useToast()
 
@@ -170,10 +172,23 @@ export const useLoopZap = () => {
     return formatUnits(totalExposure.value, pool.borrowAssetDecimals)
   })
 
+  const availableLiquidity = computed(() => {
+    const pool = selectedPool.value
+    if (!pool) return 0n
+    const vault = getVault(pool.borrowVault)
+    if (!vault || !('totalCash' in vault)) return 0n
+    return vault.totalCash as bigint
+  })
+
+  const isInsufficientLiquidity = computed(() => {
+    return debtAmount.value > 0n && debtAmount.value > availableLiquidity.value
+  })
+
   const isReady = computed(() => {
     return isConnected.value
       && inputAmountNano.value > 0n
       && inputAmountNano.value <= walletBalance.value
+      && !isInsufficientLiquidity.value
       && zapQuote.value !== null
       && multiplyQuote.value !== null
       && !quoteError.value
@@ -421,6 +436,8 @@ export const useLoopZap = () => {
     totalExposureFormatted,
     walletBalance,
     expectedBptTotal,
+    availableLiquidity,
+    isInsufficientLiquidity,
 
     isQuoting,
     isPreparing,
