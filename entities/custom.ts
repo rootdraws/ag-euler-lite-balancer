@@ -5,6 +5,7 @@ export const themeHue = 150
 export type IntrinsicApySourceConfig =
   | { provider: 'defillama', address: string, chainId: number, poolId: string, useSpotApy?: boolean }
   | { provider: 'pendle', address: string, chainId: number, pendleMarket: string, crossChainSourceChainId?: number }
+  | { provider: 'merkl', address: string, chainId: number, merklIdentifier: string }
 
 export const intrinsicApySources: readonly IntrinsicApySourceConfig[] = [
   // DefiLlama pools — Ethereum (1)
@@ -76,6 +77,16 @@ export const intrinsicApySources: readonly IntrinsicApySourceConfig[] = [
   // DefiLlama pools — Monad (143)
   { provider: 'defillama', chainId: 143, address: '0x10Aeaf63194db8d453d4D85a06E5eFE1dd0b5417', poolId: '747c1d2a-c668-4682-b9f9-296708a3dd90' },
   { provider: 'defillama', chainId: 143, address: '0x1b68626dca36c7fe922fd2d55e4f631d962de19c', poolId: 'ee40513c-9356-4c53-9f26-446b484a8ae2' },
+  // Balancer V3 BPT collateral vaults — base swap fee yield
+  { provider: 'defillama', chainId: 143, address: '0x5795130BFb9232C7500C6E57A96Fdd18bFA60436', poolId: 'e1c092b8-3d7b-4a27-b24c-da8a0ff2f8d2' },
+  { provider: 'defillama', chainId: 143, address: '0x578c60e6Df60336bE41b316FDE74Aa3E2a4E0Ea5', poolId: '607480b9-0f64-41ff-895e-2fe1a4eb6ff8' },
+  { provider: 'defillama', chainId: 143, address: '0x6660195421557BC6803e875466F99A764ae49Ed7', poolId: 'a99dd81c-3388-4c16-9f87-a2fa66c2c911' },
+  { provider: 'defillama', chainId: 143, address: '0x175831aF06c30F2EA5EA1e3F5EBA207735Eb9F92', poolId: 'f0a09305-90b1-4bc7-aae6-5b7caba7ad9d' },
+  // Balancer V3 BPT collateral vaults — Merkl reward campaigns (additive with DefiLlama base)
+  { provider: 'merkl', chainId: 143, address: '0x5795130BFb9232C7500C6E57A96Fdd18bFA60436', merklIdentifier: '0x2DAA146dfB7EAef0038F9F15B2EC1e4DE003f72b' },
+  { provider: 'merkl', chainId: 143, address: '0x578c60e6Df60336bE41b316FDE74Aa3E2a4E0Ea5', merklIdentifier: '0x02b34a02db24179Ac2D77Ae20AA6215C7153E7f8' },
+  { provider: 'merkl', chainId: 143, address: '0x6660195421557BC6803e875466F99A764ae49Ed7', merklIdentifier: '0x340Fa62AE58e90473da64b0af622cdd6113106Cb' },
+  { provider: 'merkl', chainId: 143, address: '0x175831aF06c30F2EA5EA1e3F5EBA207735Eb9F92', merklIdentifier: '0xbddb004A6c393C3F83BCCCF7F07eE9d409b214dE' },
 
   // DefiLlama pools — Sonic (146)
   { provider: 'defillama', chainId: 146, address: '0x16af6b1315471Dc306D47e9CcEfEd6e5996285B6', poolId: '24b3096a-488d-4a61-afa6-e5e9be2ce4bf' },

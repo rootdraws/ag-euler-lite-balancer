@@ -2,6 +2,7 @@ import { intrinsicApySources } from '~/entities/custom'
 import type { IntrinsicApyInfo, IntrinsicApyProvider, IntrinsicApyResult } from '~/entities/intrinsic-apy'
 import { EMPTY_INTRINSIC_APY } from '~/entities/intrinsic-apy'
 import { createDefiLlamaProvider } from '~/services/intrinsicApy/defillamaProvider'
+import { createMerklProvider } from '~/services/intrinsicApy/merklProvider'
 import { createPendleProvider } from '~/services/intrinsicApy/pendleProvider'
 import { logWarn } from '~/utils/errorHandling'
 import { CACHE_TTL_5MIN_MS } from '~/entities/tuning-constants'
@@ -16,13 +17,24 @@ const normalize = (value?: string) => value?.toLowerCase() || ''
 
 const providers: IntrinsicApyProvider[] = [
   createDefiLlamaProvider(intrinsicApySources),
+  createMerklProvider(intrinsicApySources),
   createPendleProvider(intrinsicApySources),
 ]
 
 const mergeResults = (allResults: IntrinsicApyResult[]): Record<string, IntrinsicApyInfo> => {
   const byAddress: Record<string, IntrinsicApyInfo> = {}
   for (const result of allResults) {
-    byAddress[result.address] = result.info
+    const existing = byAddress[result.address]
+    if (existing) {
+      byAddress[result.address] = {
+        apy: existing.apy + result.info.apy,
+        provider: `${existing.provider} + ${result.info.provider}`,
+        source: existing.source,
+      }
+    }
+    else {
+      byAddress[result.address] = result.info
+    }
   }
   return byAddress
 }
