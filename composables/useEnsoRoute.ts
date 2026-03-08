@@ -5,6 +5,14 @@ import { swapVerifierAbi } from '~/entities/euler/abis'
 import { INTEREST_ADJUSTMENT_BPS, BPS_BASE } from '~/entities/tuning-constants'
 import { vaultPreviewDepositAbi } from '~/abis/vault'
 
+const erc20DecimalsAbi = [{
+  type: 'function' as const,
+  name: 'decimals',
+  inputs: [],
+  outputs: [{ type: 'uint8' }],
+  stateMutability: 'view' as const,
+}]
+
 const HANDLER_GENERIC: Hex = '0x47656e6572696300000000000000000000000000000000000000000000000000'
 
 const swapFunctionAbi = [{
@@ -30,14 +38,13 @@ const swapFunctionAbi = [{
   stateMutability: 'nonpayable' as const,
 }]
 
-const depositFunctionAbi = [{
+const sweepFunctionAbi = [{
   type: 'function' as const,
-  name: 'deposit',
+  name: 'sweep',
   inputs: [
     { name: 'token', type: 'address' },
-    { name: 'vault', type: 'address' },
     { name: 'amountMin', type: 'uint256' },
-    { name: 'account', type: 'address' },
+    { name: 'to', type: 'address' },
   ],
   outputs: [],
   stateMutability: 'nonpayable' as const,
@@ -116,11 +123,26 @@ export async function previewAdapterZapIn(
     args: [inputAmount],
   })
 
-  // Balancer V3 queryAddLiquidityUnbalanced reverts with NotStaticCall()
-  // when called via eth_call. Use the wrapped token amount as the BPT
-  // estimate — for single-sided deposits this is a close approximation.
-  // On-chain slippage protection via minBptOut guards the actual execution.
-  const expectedBptOut = wrappedAmount
+  const wrapperDecimals = await readContract(config, {
+    address: entry.wrapper as Address,
+    abi: erc20DecimalsAbi,
+    functionName: 'decimals',
+  }) as number
+
+  // BPT is always 18 decimals. Scale wrappedAmount from wrapper decimals
+  // to BPT decimals. This approximates 1 wrapped token ≈ 1 BPT for
+  // single-sided deposits. On-chain slippage via minBptOut guards execution.
+  const BPT_DECIMALS = 18
+  let expectedBptOut: bigint
+  if (wrapperDecimals < BPT_DECIMALS) {
+    expectedBptOut = wrappedAmount * (10n ** BigInt(BPT_DECIMALS - wrapperDecimals))
+  }
+  else if (wrapperDecimals > BPT_DECIMALS) {
+    expectedBptOut = wrappedAmount / (10n ** BigInt(wrapperDecimals - BPT_DECIMALS))
+  }
+  else {
+    expectedBptOut = wrappedAmount
+  }
 
   const slippageBps = Math.round(slippagePercent * 100)
   const minBptOut = expectedBptOut * BigInt(10000 - slippageBps) / 10000n
@@ -207,10 +229,10 @@ export const useEnsoRoute = () => {
       }],
     })
 
-    const depositCalldata = encodeFunctionData({
-      abi: depositFunctionAbi,
-      functionName: 'deposit',
-      args: [ctx.tokenOut, ctx.collateralVault, 0n, ctx.subAccount],
+    const sweepCalldata = encodeFunctionData({
+      abi: sweepFunctionAbi,
+      functionName: 'sweep',
+      args: [ctx.tokenOut, 0n, ctx.collateralVault],
     })
 
     const minAmountOut = BigInt(ensoRoute.minAmountOut)
@@ -257,7 +279,7 @@ export const useEnsoRoute = () => {
         swapperData: '0x' as Hex,
         multicallItems: [
           { functionName: 'swap', args: [], data: swapCalldata },
-          { functionName: 'deposit', args: [], data: depositCalldata },
+          { functionName: 'sweep', args: [], data: sweepCalldata },
         ],
       },
       verify,
@@ -379,10 +401,10 @@ export const useEnsoRoute = () => {
       }],
     })
 
-    const depositCalldata = encodeFunctionData({
-      abi: depositFunctionAbi,
-      functionName: 'deposit',
-      args: [ctx.tokenOut, ctx.collateralVault, 0n, ctx.subAccount],
+    const sweepCalldata = encodeFunctionData({
+      abi: sweepFunctionAbi,
+      functionName: 'sweep',
+      args: [ctx.tokenOut, 0n, ctx.collateralVault],
     })
 
     const verifierData = encodeFunctionData({
@@ -426,7 +448,7 @@ export const useEnsoRoute = () => {
         swapperData: '0x' as Hex,
         multicallItems: [
           { functionName: 'swap', args: [], data: swapCalldata },
-          { functionName: 'deposit', args: [], data: depositCalldata },
+          { functionName: 'sweep', args: [], data: sweepCalldata },
         ],
       },
       verify,
